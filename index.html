@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Topdeck</title>
+<title>Scry Ten</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -77,7 +77,7 @@ button:disabled{opacity:.5;cursor:default}
 <body>
 <div class="wrap">
   <header>
-    <h1>Topdeck<span>Guess the Magic card in 10. Match all five: CMC, type, colours, set and name.</span></h1>
+    <h1>Scry Ten<span>Guess the Magic card in 10. Match all five: CMC, type, colours, set and name.</span></h1>
     <div class="modes">
       <button id="mDaily" type="button">Daily</button>
       <button id="mRandom" type="button">Endless</button>
@@ -189,7 +189,7 @@ function renderHint(){
 function shareText(){
   const a=CARDS[state.ans],sq={hit:"🟩",near:"🟨",miss:"⬛"};
   const rows=state.guesses.map(gi=>{const r=score(CARDS[gi],a);return [r.cmc,r.type,r.col,r.set,r.name].map(x=>sq[x]).join("")});
-  return `Topdeck ${state.mode==="daily"?state.date:"Endless"} ${state.won?state.guesses.length:"X"}/${MAX}\n`+rows.join("\n");
+  return `Scry Ten ${state.mode==="daily"?state.date:"Endless"} ${state.won?state.guesses.length:"X"}/${MAX}\n`+rows.join("\n");
 }
 function renderEnd(){
   const el=$("end");
