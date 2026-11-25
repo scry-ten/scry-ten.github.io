@@ -39,9 +39,23 @@ button:disabled{opacity:.5;cursor:default}
 .count b{color:var(--ink);font-size:20px}
 #msg{min-height:1.5em;margin:10px 0 0;color:var(--soft)}
 #msg.err{color:#ff9a84}
-.hint{margin-top:14px;padding:12px 16px;border-radius:12px;background:#2a2412;border:1px solid var(--near);display:none}
-.hint.show{display:block}
-.hint b{color:#f2c84b}
+.hints{margin-top:14px;padding:12px 14px;border-radius:12px;background:#1c2233;border:1px solid var(--line)}
+.hints .top{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 16px;align-items:baseline;margin-bottom:10px}
+.hints .top b{font-size:17px}
+.hints .top span{color:var(--soft);font-size:14px}
+.hgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.hbtn{min-height:52px;padding:6px 8px;line-height:1.2;font-size:15px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.hbtn small{font-weight:600;font-size:13px;color:var(--soft)}
+.hbtn.used{background:#2a2412;border-color:var(--near);color:#f2c84b;cursor:default;opacity:1}
+.hbtn.used small{color:#d9c48a}
+.hbtn.got{opacity:.55}
+.pips2{display:inline-flex;gap:4px;vertical-align:middle;margin-left:6px}
+.pips2 i{width:10px;height:10px;border-radius:50%;background:#f2c84b}
+.pips2 i.off{background:transparent;border:1.5px solid var(--soft)}
+.score{font:900 44px/1 Cinzel,Georgia,serif;margin:6px 0 2px}
+.score small{font:700 16px "Source Sans 3",sans-serif;margin-left:6px}
+.calc{font-size:14px;color:#6b6250;margin:0 0 10px}
+@media(max-width:600px){.hgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .board{margin-top:16px;background:var(--mat);border:1px solid var(--line);border-radius:16px;padding:12px;box-shadow:inset 0 0 60px #0006}
 .row{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.4fr) minmax(0,1fr) minmax(0,1.4fr) minmax(0,1.8fr);gap:8px;margin-bottom:8px}
 .row:last-child{margin-bottom:0}
@@ -102,7 +116,7 @@ button:disabled{opacity:.5;cursor:default}
     <div class="count"><b id="left">10</b> guesses left</div>
   </div>
   <p id="msg" aria-live="polite"></p>
-  <div id="hint" class="hint" aria-live="polite"></div>
+  <section id="hint" class="hints" aria-live="polite"></section>
 
   <div class="board" id="board"></div>
 
@@ -117,7 +131,10 @@ button:disabled{opacity:.5;cursor:default}
     <div><h3>&nbsp;</h3>
       <p><b>Colours</b>: gold if any colour overlaps. Colourless is its own colour.</p>
       <p><b>Set</b>: the card's first printing. Gold if same year; the arrow points to the answer's year.</p>
-      <p><b>Hint</b>: after 5 misses, one category you haven't matched is revealed.</p></div>
+      <p><b>Hints</b>: up to 3 per game, your choice of CMC, type, colours or set. Each one used takes 10% off your score.</p></div>
+    <div><h3>Scoring</h3>
+      <p>Right on guess 1 scores 1,000 points, guess 2 scores 900, and so on down to 100 on guess 10. Out of guesses scores 0.</p>
+      <p>Hints multiply it: none 100%, one 90%, two 80%, three 70%.</p></div>
   </section>
   <p class="foot">1,500 guessable cards: the most-played Commander cards by EDHREC rank plus about 240 Legacy staples. Answers come from the most popular 800. Card data from Scryfall. Daily puzzle changes at midnight; Endless deals a new card each round.</p>
 </div>
@@ -129,7 +146,10 @@ const CARDS=DATA.cards.map(([name,cmc,t,col,code],i)=>({name,cmc,type:DATA.types
 /* answers: the Legacy staples plus the most-played Commander cards (top 800 overall); plain lands only from the top 400. Every card can still be guessed. */
 const ANSWERS=CARDS.map((c,i)=>i).filter(i=>i<800&&(CARDS[i].type!=="Land"||i<400));
 const ORDER="WUBRG",NAMES={W:"White",U:"Blue",B:"Black",R:"Red",G:"Green",C:"Colourless"};
-const MAX=10,HINT_AT=5;
+const MAX=10,MAXH=3,HK=["cmc","type","col","set"],HLABEL={cmc:"CMC",type:"Type",col:"Colours",set:"Set"};
+const base=n=>n>=1&&n<=MAX?1100-100*n:0;
+const mult=h=>1-0.1*h;
+const pts=(n,h)=>Math.round(base(n)*mult(h));
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const norm=s=>s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"");
@@ -164,7 +184,7 @@ function score(g,a){
 let state;
 function fresh(mode){
   const ans=mode==="daily"?dailyIndex():ANSWERS[Math.floor(Math.random()*ANSWERS.length)];
-  return {mode,date:today(),ans,guesses:[],done:false,won:false,hint:null};
+  return {mode,date:today(),ans,guesses:[],done:false,won:false,hints:[]};
 }
 function save(){if(state.mode==="daily")store.set("topdeck-daily",state);else store.set("topdeck-endless",state)}
 
@@ -189,33 +209,52 @@ function matched(){
   state.guesses.forEach(gi=>{const r=score(CARDS[gi],a);for(const k in m)if(r[k]==="hit")m[k]=true});
   return m;
 }
+function hintVal(k){
+  const a=CARDS[state.ans];
+  return k==="cmc"?String(a.cmc):k==="type"?a.type:k==="col"?cols(a).map(x=>NAMES[x]).join(", "):a.set+" ("+a.year+")";
+}
 function renderHint(){
   const el=$("hint");
-  if(!state.hint){el.className="hint";el.innerHTML="";return}
-  const a=CARDS[state.ans],k=state.hint;
-  const val=k==="cmc"?`CMC is <b>${a.cmc}</b>`:k==="type"?`Type is <b>${esc(a.type)}</b>`:k==="col"?`Colours are <b>${cols(a).map(x=>NAMES[x]).join(", ")}</b>`:k==="set"?`First printed in <b>${esc(a.set)}</b> (${a.year})`:`Name starts with <b>${esc(a.name[0])}</b>`;
-  el.innerHTML="Hint unlocked: "+val+".";el.className="hint show";
+  if(!Array.isArray(state.hints))state.hints=[];
+  const used=state.hints,left=MAXH-used.length,m=matched(),n=state.guesses.length;
+  const next=state.done?0:pts(n+1,used.length);
+  el.innerHTML=`<div class="top"><b>Hints<span class="pips2" aria-label="${left} of ${MAXH} left">${[0,1,2].map(i=>`<i class="${i<left?"":"off"}"></i>`).join("")}</span></b>
+    <span>${state.done?"Game over":`Get it on your next guess for <b style="color:var(--ink)">${next}</b> pts${left?" · each hint costs 10%":""}`}</span></div>
+    <div class="hgrid">${HK.map(k=>{
+      if(used.includes(k))return `<button type="button" class="hbtn used" disabled>${esc(hintVal(k))}<small>${HLABEL[k]}</small></button>`;
+      const off=state.done||!left||m[k];
+      return `<button type="button" class="hbtn${m[k]?" got":""}" data-h="${k}"${off?" disabled":""}>Reveal ${HLABEL[k]}<small>${m[k]?"already matched":left?"-10%":"no hints left"}</small></button>`;
+    }).join("")}</div>`;
+  el.querySelectorAll("[data-h]").forEach(b=>b.onclick=()=>useHint(b.dataset.h));
+}
+function useHint(k){
+  if(state.done||state.hints.length>=MAXH||state.hints.includes(k))return;
+  state.hints.push(k);save();render();
 }
 function shareText(){
   const a=CARDS[state.ans],sq={hit:"🟩",near:"🟨",miss:"⬛"};
   const rows=state.guesses.map(gi=>{const r=score(CARDS[gi],a);return [r.cmc,r.type,r.col,r.set,r.name].map(x=>sq[x]).join("")});
-  return `Scry Ten ${state.mode==="daily"?state.date:"Endless"} ${state.won?state.guesses.length:"X"}/${MAX}\n`+rows.join("\n");
+  const h=state.hints.length;
+  return `Scry Ten ${state.mode==="daily"?state.date:"Endless"} ${state.won?state.guesses.length:"X"}/${MAX} · ${finalScore()} pts${h?` · ${h} hint${h>1?"s":""}`:""}\n`+rows.join("\n");
 }
 let closed=false,popT=0;
+const finalScore=()=>state.won?pts(state.guesses.length,state.hints.length):0;
 function closePop(){closed=true;$("pop").hidden=true;$("seeRes").hidden=!state.done;$("guess").focus()}
 function openPop(){closed=false;$("pop").hidden=false;$("seeRes").hidden=true;const b=$("again");if(b)b.focus()}
 function renderEnd(){
   const el=$("end");
   clearTimeout(popT);
   if(!state.done){el.innerHTML="";$("pop").hidden=true;$("seeRes").hidden=true;return}
-  const a=CARDS[state.ans],st=store.get("topdeck-stats")||{streak:0,best:0,played:0,wins:0};
+  const a=CARDS[state.ans],st=store.get("topdeck-stats")||{streak:0,best:0,played:0,wins:0,points:0,top:0};
   const n=state.guesses.length;
   el.className="end "+(state.won?"win":"lose");
   el.innerHTML=`<button type="button" class="x" id="xPop" aria-label="Close">&times;</button>
     <p class="big">${state.won?(n===1?"First try!":`Got it in ${n} of ${MAX}`):"Out of guesses"}</p>
     <h2 id="endh">${state.won?"Resolved!":"Countered."}</h2>
+    <p class="score">${finalScore()}<small>points</small></p>
+    <p class="calc">${state.won?`Guess ${n}: ${base(n)} pts${state.hints.length?` × ${Math.round(mult(state.hints.length)*100)}% for ${state.hints.length} hint${state.hints.length>1?"s":""}`:", no hints used"}`:"No points this round."}</p>
     <p>The card was <b>${esc(a.name)}</b>: ${a.cmc} CMC ${esc(a.type)}, ${cols(a).map(x=>NAMES[x]).join("/")}, from ${esc(a.set)} (${a.year}).</p>
-    ${state.mode==="daily"?`<p>Streak ${st.streak}, best ${st.best}, won ${st.wins} of ${st.played}. New card at midnight.</p>`:""}
+    ${state.mode==="daily"?`<p>Streak ${st.streak}, best streak ${st.best}, won ${st.wins} of ${st.played}. Best score ${st.top||0}, total ${st.points||0} pts. New card at midnight.</p>`:""}
     <div class="btns"><button type="button" id="copy">Copy result</button>${state.mode==="endless"?'<button type="button" class="go" id="again">Next card</button>':'<button type="button" class="go" id="again">Play Endless</button>'}</div>
     <p id="copied" style="font-size:14px;margin-top:8px"></p>`;
   $("copy").onclick=()=>{const t=shareText();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{$("copied").textContent="Copied."}).catch(()=>{$("copied").textContent=t})};
@@ -241,14 +280,11 @@ function submit(){
   if(state.guesses.includes(gi)){say("You already guessed that one.",true);return}
   state.guesses.push(gi);$("guess").value="";$("sugg").innerHTML="";say("");
   const won=gi===state.ans;
-  if(!won&&state.guesses.length===HINT_AT&&!state.hint){
-    const m=matched();state.hint=["col","type","cmc","set"].find(k=>!m[k])||"name";
-  }
   if(won||state.guesses.length>=MAX){
     state.done=true;state.won=won;state.justEnded=true;closed=false;
     if(state.mode==="daily"){
       const st=store.get("topdeck-stats")||{streak:0,best:0,played:0,wins:0,last:null};
-      st.played++;if(won){st.wins++;st.streak=st.last===dayNum()-1?st.streak+1:1;st.best=Math.max(st.best,st.streak);st.last=dayNum()}else{st.streak=0}
+      st.played++;const sc=won?pts(state.guesses.length,state.hints.length):0;st.points=(st.points||0)+sc;st.top=Math.max(st.top||0,sc);if(won){st.wins++;st.streak=st.last===dayNum()-1?st.streak+1:1;st.best=Math.max(st.best,st.streak);st.last=dayNum()}else{st.streak=0}
       store.set("topdeck-stats",st);
     }
   }
