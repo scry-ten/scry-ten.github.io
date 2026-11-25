@@ -59,9 +59,18 @@ button:disabled{opacity:.5;cursor:default}
 .pips{display:inline-flex;gap:3px;justify-content:center;flex-wrap:wrap}
 .pip{width:18px;height:18px;border-radius:50%;font:700 11px/18px "Source Sans 3",sans-serif;color:#111;box-shadow:0 1px 0 #0005}
 .pW{background:#f8f2d8}.pU{background:#4d9de0}.pB{background:#a99a93}.pR{background:#ec6a4c}.pG{background:#3fa35f}.pC{background:#c9c3c0}
-.end{margin-top:16px;padding:18px;border-radius:14px;background:var(--card);color:var(--cardink);display:none}
-.end.show{display:block}
-.end h2{font:900 26px/1.1 Cinzel,Georgia,serif;margin:0 0 6px}
+.pop{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:16px;background:#050a14b3;backdrop-filter:blur(2px)}
+.pop[hidden]{display:none}
+.end{position:relative;width:100%;max-width:460px;padding:24px 22px 20px;border-radius:16px;background:var(--card);color:var(--cardink);box-shadow:0 24px 60px #000a;animation:popin .35s ease both}
+.end.win{border-top:8px solid var(--hit)}
+.end.lose{border-top:8px solid var(--accent)}
+.end .x{position:absolute;top:8px;right:8px;width:44px;min-height:44px;padding:0;border:0;background:transparent;color:var(--cardink);font-size:26px;line-height:1}
+.end .big{font:900 15px "Source Sans 3",sans-serif;margin:0 0 4px;color:#6b6250}
+@keyframes popin{from{opacity:0;transform:translateY(16px) scale(.96)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.end{animation:none}}
+#seeRes{margin-top:14px}
+#seeRes[hidden]{display:none}
+.end h2{font:900 30px/1.1 Cinzel,Georgia,serif;margin:0 0 8px;padding-right:36px}
 .end p{margin:4px 0}
 .end .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .end button{background:#fff;color:var(--cardink);border-color:#cbbf9f}
@@ -97,7 +106,8 @@ button:disabled{opacity:.5;cursor:default}
 
   <div class="board" id="board"></div>
 
-  <div id="end" class="end" aria-live="polite"></div>
+  <button id="seeRes" type="button" hidden>See result</button>
+  <div id="pop" class="pop" hidden><div id="end" class="end" role="dialog" aria-modal="true" aria-labelledby="endh"></div></div>
 
   <section class="rules">
     <div><h3>How tiles score</h3>
@@ -191,18 +201,29 @@ function shareText(){
   const rows=state.guesses.map(gi=>{const r=score(CARDS[gi],a);return [r.cmc,r.type,r.col,r.set,r.name].map(x=>sq[x]).join("")});
   return `Scry Ten ${state.mode==="daily"?state.date:"Endless"} ${state.won?state.guesses.length:"X"}/${MAX}\n`+rows.join("\n");
 }
+let closed=false,popT=0;
+function closePop(){closed=true;$("pop").hidden=true;$("seeRes").hidden=!state.done;$("guess").focus()}
+function openPop(){closed=false;$("pop").hidden=false;$("seeRes").hidden=true;const b=$("again");if(b)b.focus()}
 function renderEnd(){
   const el=$("end");
-  if(!state.done){el.className="end";el.innerHTML="";return}
+  clearTimeout(popT);
+  if(!state.done){el.innerHTML="";$("pop").hidden=true;$("seeRes").hidden=true;return}
   const a=CARDS[state.ans],st=store.get("topdeck-stats")||{streak:0,best:0,played:0,wins:0};
-  el.innerHTML=`<h2>${state.won?"Resolved!":"Countered."}</h2>
+  const n=state.guesses.length;
+  el.className="end "+(state.won?"win":"lose");
+  el.innerHTML=`<button type="button" class="x" id="xPop" aria-label="Close">&times;</button>
+    <p class="big">${state.won?(n===1?"First try!":`Got it in ${n} of ${MAX}`):"Out of guesses"}</p>
+    <h2 id="endh">${state.won?"Resolved!":"Countered."}</h2>
     <p>The card was <b>${esc(a.name)}</b>: ${a.cmc} CMC ${esc(a.type)}, ${cols(a).map(x=>NAMES[x]).join("/")}, from ${esc(a.set)} (${a.year}).</p>
-    <p>${state.won?`Found in ${state.guesses.length} of ${MAX}.`:"Out of guesses."}${state.mode==="daily"?` Streak ${st.streak}, best ${st.best}, won ${st.wins} of ${st.played}.`:""}</p>
+    ${state.mode==="daily"?`<p>Streak ${st.streak}, best ${st.best}, won ${st.wins} of ${st.played}. New card at midnight.</p>`:""}
     <div class="btns"><button type="button" id="copy">Copy result</button>${state.mode==="endless"?'<button type="button" class="go" id="again">Next card</button>':'<button type="button" class="go" id="again">Play Endless</button>'}</div>
-    <p id="copied" style="font-size:14px"></p>`;
-  el.className="end show";
+    <p id="copied" style="font-size:14px;margin-top:8px"></p>`;
   $("copy").onclick=()=>{const t=shareText();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{$("copied").textContent="Copied."}).catch(()=>{$("copied").textContent=t})};
   $("again").onclick=()=>setMode("endless",true);
+  $("xPop").onclick=closePop;
+  if(closed){$("pop").hidden=true;$("seeRes").hidden=false}
+  else popT=setTimeout(openPop,state.justEnded?900:0);
+  state.justEnded=false;
 }
 function render(){
   renderBoard();renderHint();renderEnd();
@@ -224,7 +245,7 @@ function submit(){
     const m=matched();state.hint=["col","type","cmc","set"].find(k=>!m[k])||"name";
   }
   if(won||state.guesses.length>=MAX){
-    state.done=true;state.won=won;
+    state.done=true;state.won=won;state.justEnded=true;closed=false;
     if(state.mode==="daily"){
       const st=store.get("topdeck-stats")||{streak:0,best:0,played:0,wins:0,last:null};
       st.played++;if(won){st.wins++;st.streak=st.last===dayNum()-1?st.streak+1:1;st.best=Math.max(st.best,st.streak);st.last=dayNum()}else{st.streak=0}
@@ -257,11 +278,14 @@ $("guess").addEventListener("keydown",e=>{
 $("sugg").addEventListener("mousedown",e=>{const li=e.target.closest("li");if(li){e.preventDefault();pick(+li.dataset.k)}});
 $("guess").addEventListener("blur",()=>setTimeout(()=>{$("sugg").innerHTML=""},150));
 $("submit").addEventListener("click",submit);
+$("seeRes").addEventListener("click",openPop);
+$("pop").addEventListener("click",e=>{if(e.target===$("pop"))closePop()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("pop").hidden)closePop()});
 
 function setMode(mode,forceNew){
   if(mode==="daily"){const s=store.get("topdeck-daily");state=s&&s.date===today()?s:fresh("daily")}
   else{const s=store.get("topdeck-endless");state=s&&!s.done&&!forceNew?s:fresh("endless")}
-  save();say("");render();$("guess").focus();
+  closed=false;save();say("");render();if(!state.done)$("guess").focus();
 }
 $("mDaily").addEventListener("click",()=>setMode("daily"));
 $("mRandom").addEventListener("click",()=>setMode("endless",state.mode==="endless"&&state.done));
